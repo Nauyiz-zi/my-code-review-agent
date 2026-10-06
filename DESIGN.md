@@ -273,14 +273,18 @@ assistant -> 下一步动作
 
 ### 11.1 工具层测试
 
-`test_tools.py` 覆盖：
+`test_tools.py` 基于标准库 `unittest`，覆盖：
 
 - `read_file` 正常读取与行号格式。
 - `search_code` 正常匹配。
 - 文件不存在。
 - 未知工具。
-- 路径越界。
+- 路径越界（相对路径与绝对路径）。
 - 非法正则表达式。
+- 空文件。
+- 二进制文件。
+- 目录被当作文件读取。
+- 缺少必填参数。
 
 ### 11.2 端到端测试
 
@@ -309,7 +313,7 @@ python main.py examples/clean_code.py
 | 模型输出非 JSON | 触发纠正轮次 |
 | 模型持续调用工具 | 达到 `max_steps` 后停止 |
 
-## 14. 局限与后续工作
+## 13. 局限与后续工作
 
 当前限制：
 
@@ -352,4 +356,3 @@ user      -> {"ok": true, "result": "examples/buggy_code.py:3: PASSWORD = ..."}
 Step 3
 assistant -> {"action": "final", "answer": "## 审查报告 ..."}
 ```
-

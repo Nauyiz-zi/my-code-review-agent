@@ -14,7 +14,8 @@ IGNORED_DIRS = {
 MAX_FILE_SIZE = 1_000_000
 MAX_SEARCH_FILE_SIZE = 500_000
 
-def safe_path(user_path:str)->Path:
+
+def safe_path(user_path: str) -> Path:
     raw = Path(user_path)
     if raw.is_absolute():
         candidate = raw.resolve()
@@ -26,7 +27,7 @@ def safe_path(user_path:str)->Path:
         
     return candidate
 
-def read_file(path:str,start:int = 1,end:int | None = None)->str:
+def read_file(path: str, start: int = 1, end: int | None = None) -> str:
     target = safe_path(path)
     
     if not target.exists():
@@ -46,20 +47,20 @@ def read_file(path:str,start:int = 1,end:int | None = None)->str:
     if not lines:
         return "(空文件)"
     
-    start = max(1,int(start or 1))
-    end = min(len(lines),int(end) if end is not None else len(lines))
-    
-    if start >len(lines):
+    start = max(1, int(start or 1))
+    end = min(len(lines), int(end) if end is not None else len(lines))
+
+    if start > len(lines):
         return f"(起始行{start}超过文件总行数{len(lines)})"
     if start > end:
         return f"(无效范围：start={start},end={end})"
-    
+
     return "\n".join(
-        f"{number}:{lines[number-1]}"
-        for number in range(start,end+1)
+        f"{number}:{lines[number - 1]}"
+        for number in range(start, end + 1)
     )
 
-def search_code(pattern:str,path:str=".",max_results:int=50)->str:
+def search_code(pattern: str, path: str = ".", max_results: int = 50) -> str:
     try:
         regex = re.compile(pattern)
     except re.error as exc:
@@ -75,7 +76,7 @@ def search_code(pattern:str,path:str=".",max_results:int=50)->str:
     
     for file in files:
         if not file.is_file():
-            continue 
+            continue
         if any(part in IGNORED_DIRS for part in file.parts):
             continue
         if file.stat().st_size > MAX_SEARCH_FILE_SIZE:
@@ -91,26 +92,27 @@ def search_code(pattern:str,path:str=".",max_results:int=50)->str:
         
         lines = raw.decode("utf-8",errors="replace").splitlines()
         
-        for number,line in enumerate(lines,1):
+        for number, line in enumerate(lines, 1):
             if regex.search(line):
                 relative = file.relative_to(ROOT)
                 matches.append(f"{relative}:{number}:{line.strip()}")
-                if len(matches)>=max_results:
+                if len(matches) >= max_results:
                     return "\n".join(matches)
                 
     return "\n".join(matches) if matches else "未找到匹配"
 
 TOOLS = {
-    "read_file":read_file,
-    "search_code":search_code,
+    "read_file": read_file,
+    "search_code": search_code,
 }
 
-def execute_tool(name:str,arguments:dict)->dict:
+
+def execute_tool(name: str, arguments: dict) -> dict:
     if name not in TOOLS:
-        return {"ok":False,"error":f"未知工具：{name}"}
-    
+        return {"ok": False, "error": f"未知工具：{name}"}
+
     try:
         result = TOOLS[name](**arguments)
-        return {"ok":True,"result":result}
+        return {"ok": True, "result": result}
     except Exception as exc:
-        return {"ok":False,"error":str(exc)}
+        return {"ok": False, "error": str(exc)}
