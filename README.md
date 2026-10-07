@@ -69,10 +69,9 @@ my-code-review-agent/
 │   └── index.html
 ├── hello_llm.py
 ├── test_tools.py
-├── examples/
-│   ├── buggy_code.py
-│   └── clean_code.py
-└── uploads/               # 网页上传的文件（已加入 .gitignore）
+└── examples/
+    ├── buggy_code.py
+    └── clean_code.py
 ```
 
 | 文件 | 职责 |
