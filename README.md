@@ -10,7 +10,8 @@
 - 单次会话上下文记忆，工具结果自动追加到消息历史
 - LLM 调用失败自动重试，采用指数退避
 - 安全边界：路径越界防护、文件大小限制、二进制文件检测、未知工具处理、最大步数限制
-- 命令行交互，并输出 Agent 执行轨迹
+- 命令行与 Web 双交互入口，均输出 Agent 执行轨迹
+- Web 界面通过 SSE 实时推送每一步推理与工具调用，支持上传文件审查
 - 工具层单元测试，覆盖正常流程和边界情况
 
 ## 2. 技术栈
@@ -19,6 +20,7 @@
 |------|------|
 | 语言 | Python 3.10+ |
 | LLM SDK | OpenAI Python SDK（兼容 DeepSeek、通义千问、OpenAI） |
+| Web 框架 | Flask |
 | 配置 | python-dotenv |
 | 命令行 | argparse |
 | 标准库 | pathlib、re、json、time |
@@ -26,25 +28,26 @@
 ## 3. 系统架构
 
 ```text
-┌────────────────────┐
-│      main.py       │  CLI 入口与结果展示
-└─────────┬──────────┘
-          │
-          ▼
-┌────────────────────┐
-│      agent.py      │  Agent 主循环、状态与工具调度
-└─────────┬──────────┘
-          │
-          ├──────────────────► prompts.py
-          │                    System Prompt 与输出协议
-          │
-          ├──────────────────► llm.py
-          │                    模型客户端、重试与错误封装
-          │
-          └──────────────────► tools.py
-                               工具注册表与执行入口
-                               ├── read_file
-                               └── search_code
+┌────────────────────┐   ┌────────────────────┐
+│      main.py       │   │      web.py        │
+│  CLI 入口与结果展示 │   │ Web 入口与 SSE 推送 │
+└─────────┬──────────┘   └─────────┬──────────┘
+          └────────────┬───────────┘
+                       ▼
+             ┌────────────────────┐
+             │      agent.py      │  Agent 主循环、状态与工具调度
+             └─────────┬──────────┘
+                       │
+                       ├──────────────► prompts.py
+                       │                System Prompt 与输出协议
+                       │
+                       ├──────────────► llm.py
+                       │                模型客户端、重试与错误封装
+                       │
+                       └──────────────► tools.py
+                                        工具注册表与执行入口
+                                        ├── read_file
+                                        └── search_code
 ```
 
 ## 4. 目录结构
@@ -61,16 +64,22 @@ my-code-review-agent/
 ├── prompts.py
 ├── agent.py
 ├── main.py
+├── web.py
+├── templates/
+│   └── index.html
 ├── hello_llm.py
 ├── test_tools.py
-└── examples/
-    ├── buggy_code.py
-    └── clean_code.py
+├── examples/
+│   ├── buggy_code.py
+│   └── clean_code.py
+└── uploads/               # 网页上传的文件（已加入 .gitignore）
 ```
 
 | 文件 | 职责 |
 |------|------|
 | `main.py` | 解析命令行参数，调用 Agent，打印报告和执行轨迹 |
+| `web.py` | Flask 路由：首页、上传、SSE 流式审查 |
+| `templates/index.html` | 网页前端：输入区、实时轨迹区、报告区 |
 | `agent.py` | 维护消息历史，解析模型 JSON 动作，调度工具，生成最终结果 |
 | `prompts.py` | 定义 System Prompt、工具说明、JSON 协议和报告格式 |
 | `llm.py` | 读取环境变量，创建兼容 OpenAI 的客户端，封装带重试的 `chat` |
@@ -83,12 +92,6 @@ my-code-review-agent/
 - Python 3.10 或更高版本
 - 一个 OpenAI 兼容的大模型 API Key
 - 推荐模型服务商：DeepSeek、通义千问、OpenAI
-
-如果 Python 未加入系统 `PATH`，请使用解释器的绝对路径。例如：
-
-```powershell
-& 'D:\anaconda3\python.exe' --version
-```
 
 ## 6. 安装
 
@@ -166,6 +169,14 @@ python main.py examples/buggy_code.py --max-steps 10
 | `--max-steps` | 否 | `8` | Agent 最大推理步数 |
 | `--output` | 否 | 无 | 将最终报告保存到指定文件 |
 
+### 8.4 启动网页版
+
+```bash
+python web.py
+```
+
+浏览器打开 http://127.0.0.1:5000 。支持两种输入方式：直接输入路径、上传本地文件。审查过程中，每一步推理与工具调用通过 SSE 实时显示在页面上。
+
 ## 9. 输出示例
 
 运行时，终端会先输出工具调用轨迹：
@@ -235,6 +246,8 @@ python main.py examples/buggy_code.py --max-steps 10
 | 文件过大 | 拒绝整文件读取，建议分段 |
 | 二进制文件 | 检测空字节并拒绝按文本读取 |
 | Agent 死循环 | `max_steps` 限制最大推理步数 |
+| 上传文件过大或二进制 | 上传入口直接拒绝并返回错误提示 |
+| SSE 长时间无事件 | 每 15 秒发送心跳注释，防止连接超时 |
 
 ## 13. 测试
 
@@ -242,8 +255,6 @@ python main.py examples/buggy_code.py --max-steps 10
 
 ```bash
 python test_tools.py
-# 或
-python -m unittest test_tools -v
 ```
 
 测试覆盖：
@@ -286,7 +297,7 @@ python main.py examples/clean_code.py
 
 ### 14.3 安全设计
 
-所有文件访问都通过 `safe_path` 进行路径规范化与边界校验；工具执行统一经过 `execute_tool`，异常不会直接终止 Agent；仅执行受控的文件读取和正则搜索，不执行用户代码。
+所有文件访问都通过 `safe_path` 进行路径规范化与边界校验；工具执行统一经过 `execute_tool`，异常不会直接终止 Agent；仅执行受控的文件读取和正则搜索，不执行用户代码。网页上传的文件以 UUID 重命名后存入 `uploads/`，原始文件名不参与路径拼接。
 
 ## 15. 已知限制
 
@@ -294,12 +305,13 @@ python main.py examples/clean_code.py
 - 审查质量受所选模型能力影响。
 - 无自动修改代码功能。
 - 会话记忆仅存在于单次进程内，未持久化。
+- 网页版使用 Flask 开发服务器，仅供本地演示。
 
 ## 16. 后续扩展
 
 - 增加 `run_tests`、`run_linter` 工具
 - 支持多文件批量审查
-- 增加 Web 界面
 - 持久化会话历史和审查报告
 - 接入 OpenAI Function Calling
 - 增加自动修复建议与差异生成
+- 上传文件定期清理、生产级部署

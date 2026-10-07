@@ -36,7 +36,29 @@ def content_to_text(reply) -> str:
     return content
 
 
-def run_agent(target_path: str, max_steps: int = 8) -> dict:
+def default_on_event(event: dict) -> None:
+    """默认事件回调：打印到终端，保持 CLI 行为与原来完全一致。"""
+    event_type = event["type"]
+
+    if event_type == "step_start":
+        print(f"\n[Agent 第 {event['step']} 步] 正在推理...")
+    elif event_type == "tool_call":
+        print(f"[工具调用] {event['tool']} {event['arguments']}")
+    elif event_type == "tool_result":
+        print(f"[工具结果] ok={event['ok']}")
+    elif event_type == "parse_error":
+        print(f"[解析失败] {event['error']}")
+
+
+def run_agent(target_path: str, max_steps: int = 8, on_event=None) -> dict:
+    """运行一次审查会话。
+
+    on_event 接收进度事件，供 Web 层流式推送；不传时使用默认打印回调。
+    事件类型：step_start / tool_call / tool_result / parse_error。
+    """
+    if on_event is None:
+        on_event = default_on_event
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"请审查文件：{target_path}"},
@@ -44,13 +66,13 @@ def run_agent(target_path: str, max_steps: int = 8) -> dict:
     trace = []
 
     for step in range(1, max_steps + 1):
-        print(f"\n[Agent 第 {step} 步] 正在推理...")
+        on_event({"type": "step_start", "step": step})
         reply = content_to_text(chat(messages))
 
         try:
             action = extract_json(reply)
         except (ValueError, json.JSONDecodeError) as exc:
-            print(f"[解析失败] {exc}")
+            on_event({"type": "parse_error", "step": step, "error": str(exc)})
             messages.append({"role": "assistant", "content": reply})
             messages.append({
                 "role": "user",
@@ -59,6 +81,8 @@ def run_agent(target_path: str, max_steps: int = 8) -> dict:
             continue
 
         if not isinstance(action, dict):
+            on_event({"type": "parse_error", "step": step,
+                      "error": "JSON 顶层必须是对象，请重新输出。"})
             messages.append({"role": "assistant", "content": reply})
             messages.append({
                 "role": "user",
@@ -69,10 +93,13 @@ def run_agent(target_path: str, max_steps: int = 8) -> dict:
         action_name = action.get("action")
 
         if action_name not in ALLOWED_ACTIONS:
+            on_event({"type": "parse_error", "step": step,
+                      "error": f"未知动作：{action_name}"})
             messages.append({"role": "assistant", "content": reply})
             messages.append({
                 "role": "user",
-                "content": "action 只能是 read_file、search_code 或 final，请重新输出 JSON。",
+                "content": "action 只能是 read_file、search_code 或 final，"
+                          "请重新输出 JSON。",
             })
             continue
 
@@ -92,9 +119,14 @@ def run_agent(target_path: str, max_steps: int = 8) -> dict:
             except json.JSONDecodeError:
                 arguments = {}
 
-        print(f"[工具调用] {action_name} {arguments}")
+        on_event({
+            "type": "tool_call",
+            "step": step,
+            "tool": action_name,
+            "arguments": arguments,
+        })
         result = execute_tool(action_name, arguments)
-        print(f"[工具结果] ok={result['ok']}")
+        on_event({"type": "tool_result", "step": step, "ok": result["ok"]})
 
         trace.append({
             "step": step,
