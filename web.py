@@ -13,8 +13,6 @@ UPLOAD_DIR = ROOT / "uploads"
 
 app = Flask(__name__)
 
-# ---------- 上传 ----------
-
 def is_binary(raw: bytes) -> bool:
     return b"\x00" in raw[:1024]
 
@@ -42,8 +40,6 @@ def upload():
         "original_name": file.filename,
     })
 
-
-# ---------- 审查（SSE 流式推送） ----------
 
 def sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -81,7 +77,7 @@ def review():
             try:
                 event = events.get(timeout=15)
             except queue.Empty:
-                yield ": keep-alive\n\n"  # 心跳注释，防止连接超时
+                yield ": keep-alive\n\n"
                 continue
             yield sse(event)
             if event["type"] == "done":
