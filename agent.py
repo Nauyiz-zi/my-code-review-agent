@@ -37,7 +37,6 @@ def content_to_text(reply) -> str:
 
 
 def default_on_event(event: dict) -> None:
-    """默认事件回调：打印到终端，保持 CLI 行为与原来完全一致。"""
     event_type = event["type"]
 
     if event_type == "step_start":
@@ -51,11 +50,6 @@ def default_on_event(event: dict) -> None:
 
 
 def run_agent(target_path: str, max_steps: int = 8, on_event=None) -> dict:
-    """运行一次审查会话。
-
-    on_event 接收进度事件，供 Web 层流式推送；不传时使用默认打印回调。
-    事件类型：step_start / tool_call / tool_result / parse_error。
-    """
     if on_event is None:
         on_event = default_on_event
 
